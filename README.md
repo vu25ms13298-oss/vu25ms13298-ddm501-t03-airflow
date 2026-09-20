@@ -8,31 +8,24 @@ The pipeline: ingest, validate, split, scale, train, register. The last two
 steps hand the trained model to MLflow so it can be pulled back later without
 Airflow in the picture.
 
-## MLflow: start it first
+## MLflow: self-contained, no other tutorial needed
 
-The `train` task registers into Tutorial 02-02's MLflow server. Start that
-stack before running this DAG:
+`docker-compose.yml` runs two services: `airflow` and `mlflow`. The `train`
+task registers into this project's own MLflow server -- SQLite backend,
+artifacts on a local volume (`./mlflow-data`). Nothing else needs to be
+running first.
 
-```bash
-cd ../ddm501-t02-02-full-stack   # or wherever that tutorial lives
-docker compose up -d
-```
-
-Running this DAG locally (not via `docker compose`) also needs these env vars
-exported in the same shell -- they're the credentials for that stack's MinIO,
-already set in `.env` there:
+Running this DAG locally (not via `docker compose`) needs one env var
+exported in the same shell, pointing at the `mlflow` service's published
+port:
 
 ```bash
-export MLFLOW_TRACKING_URI=http://127.0.0.1:15020
-export MLFLOW_S3_ENDPOINT_URL=http://127.0.0.1:19010
-export AWS_ACCESS_KEY_ID=minio
-export AWS_SECRET_ACCESS_KEY=minio123
-export AWS_DEFAULT_REGION=us-east-1
+export MLFLOW_TRACKING_URI=http://127.0.0.1:15030
 ```
 
 Running via `docker compose` needs none of this -- `docker-compose.yml`
-already sets it, reaching the other stack's published ports through
-`host.docker.internal`.
+already sets it, and `airflow` waits for `mlflow` to be healthy before it
+starts.
 
 ## Two ways to run it
 
@@ -55,7 +48,16 @@ airflow standalone
 The web UI comes up on <http://127.0.0.1:8080>. `standalone` prints the admin password on first start and also writes it to
 `$AIRFLOW_HOME/standalone_admin_password.txt`.
 
-**B. Docker** — one container, built once from the `Dockerfile` beside this file:
+**B. Docker** — two containers (`airflow` + `mlflow`), built once from the
+`Dockerfile` beside this file:
+
+```bash
+./setup.sh
+```
+
+`setup.sh` builds the image, starts both services, waits for them to be
+healthy, and prints the Airflow URL/password and the MLflow URL. Equivalent
+by hand:
 
 ```bash
 # On Linux only
@@ -66,9 +68,9 @@ docker compose ps        # wait for STATUS = healthy, about a minute
 docker compose exec airflow cat /opt/airflow/standalone_admin_password.txt
 ```
 
-After the first time, `docker compose up -d` is enough — Docker reuses the
-image it already built. Add `--build` again only when you change the
-`Dockerfile`.
+After the first time, `docker compose up -d` (or `./setup.sh` again) is
+enough — Docker reuses the image it already built. Add `--build` again only
+when you change the `Dockerfile`.
 
 <http://127.0.0.1:18080>, user `admin`. Port 18080 and not 8080, because Lab 2
 owns 8080 and you will want both running one day.
@@ -94,7 +96,7 @@ data/staging/2026-08-25/
 data/staging/history.jsonl one line per run
 ```
 
-Check the registered model in the MLflow UI at <http://127.0.0.1:15020>,
+Check the registered model in the MLflow UI at <http://127.0.0.1:15030>,
 experiment `wdbc-pipeline`, registered model `wdbc-classifier`.
 
 ## Pulling the model back
@@ -116,13 +118,9 @@ plain venv is enough (no python3.11 or constraints file required):
 ```bash
 python3 -m venv .venv-scripts
 source .venv-scripts/bin/activate
-pip install mlflow==2.19.0 scikit-learn==1.6.0 pandas pyarrow boto3
+pip install mlflow==2.19.0 scikit-learn==1.6.0 pandas pyarrow
 
-export MLFLOW_TRACKING_URI=http://127.0.0.1:15020
-export MLFLOW_S3_ENDPOINT_URL=http://127.0.0.1:19010
-export AWS_ACCESS_KEY_ID=minio
-export AWS_SECRET_ACCESS_KEY=minio123
-export AWS_DEFAULT_REGION=us-east-1
+export MLFLOW_TRACKING_URI=http://127.0.0.1:15030
 
 python scripts/fetch_and_predict.py
 ```
@@ -143,18 +141,27 @@ Pass `--version N` to pull a specific model version instead of the latest, or
 
 ## Kết quả đã chạy thử (end-to-end)
 
-Đã build + chạy toàn bộ pipeline trong Docker (`docker compose up -d --build`),
-với MLflow server của Tutorial 02-02 chạy song song:
+Đã build + chạy toàn bộ pipeline bằng `./setup.sh` (build cả `mlflow` lẫn
+`airflow`, đợi cả hai healthy) **hoàn toàn độc lập** — đã tắt hẳn stack của
+Tutorial 02-02 trong lúc test để xác nhận không còn phụ thuộc gì vào nó:
 
-- `airflow dags test wdbc_pipeline 2026-08-25` — cả 6 task
-  (`ingest → validate → split → scale → train → report`) đều SUCCESS.
-- Task `train` đăng ký thành công model `wdbc-classifier` lên MLflow
-  registry: **version 1**, `accuracy=0.9512`, `roc_auc=0.9956`.
-- Chạy lại cùng ngày `2026-08-25` → tạo **version 2** mới (không ghi đè
-  version cũ), đúng hành vi kỳ vọng: mỗi lần train là một run/version mới.
-- `scripts/fetch_and_predict.py` (cả trong container lẫn qua venv host
-  `.venv-scripts`) tải model về qua MLflow client API và dự đoán đúng
-  5/5 dòng test so với nhãn thật (`diagnosis`).
+- `airflow dags test wdbc_pipeline <ds>` — cả 6 task
+  (`ingest → validate → split → scale → train → report`) đều SUCCESS, nhiều
+  lần với các ngày khác nhau.
+- Task `train` đăng ký thành công model `wdbc-classifier` lên MLflow server
+  tự chứa của chính T03 (SQLite backend + artifact lưu qua HTTP proxy của
+  chính MLflow server, không cần S3/MinIO): `accuracy=0.9512`,
+  `roc_auc=0.9956`. Chạy lại vẫn tạo version mới mỗi lần, không ghi đè.
+- `scripts/fetch_and_predict.py` tải model về qua MLflow client API và dự
+  đoán đúng 5/5 dòng test so với nhãn thật (`diagnosis`).
+
+Một lỗi gặp phải khi tự host artifact store cục bộ và cách sửa: đặt
+`--default-artifact-root` là một đường dẫn local (`/mlflow/artifacts`) khiến
+**client** (container `airflow`, filesystem khác với container `mlflow`) cố
+ghi file trực tiếp vào đường dẫn đó và bị `PermissionError`. Fix bằng
+`--artifacts-destination` (giữ nguyên artifact root mặc định
+`mlflow-artifacts:/`), để mọi thao tác đọc/ghi artifact đều đi qua HTTP API
+của chính MLflow server thay vì giả định hai container dùng chung filesystem.
 
 ### Ảnh chụp màn hình
 

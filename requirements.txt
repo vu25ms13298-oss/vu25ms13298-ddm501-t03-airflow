@@ -12,10 +12,8 @@ apache-airflow==2.8.4
 pandas==2.1.4
 pyarrow==14.0.2
 
-# The train task registers into Tutorial 02-02's MLflow server; same client
-# and model pins as that tutorial, so the two sides speak the same protocol.
-# boto3 is intentionally unpinned: Airflow's constraints file already pins it
-# (for its own S3 provider) and that version is new enough for MLflow's use.
+# mlflow runs both the train task's client and (via the `mlflow` service in
+# docker-compose.yml) this project's own tracking server -- same image,
+# same package. Local SQLite + filesystem artifact store, so no boto3/S3.
 mlflow==2.19.0
 scikit-learn==1.6.0
-boto3

@@ -1,4 +1,4 @@
-# Tutorial 03 — Airflow
+# Tutorial 03 — Airflow + MLflow, fully self-contained
 #
 #   docker compose up -d --build      # first time: builds the image, then starts it
 #   docker compose ps                 # wait for STATUS = healthy (about a minute)
@@ -7,21 +7,60 @@
 # On Linux, first create a .env file next to this one containing:
 #     AIRFLOW_UID=1000                # the number `id -u` prints
 #
-# Then open http://127.0.0.1:18080 and log in as `admin`.
+# Then open http://127.0.0.1:18080 (Airflow, user `admin`) and
+# http://127.0.0.1:15030 (MLflow).
 #
-# The train task registers into Tutorial 02-02's MLflow server, so start that
-# stack first (docker compose up -d in ddm501-t02-02-full-stack). The
-# AWS_* values below are that stack's MinIO login from its .env -- change
-# them here too if you changed them there.
+# No other stack needed: the `mlflow` service below is this project's own
+# tracking server -- SQLite backend, artifacts on a local volume. Nothing
+# points at Tutorial 02-02 anymore.
 
 name: ddm501-t03
 
 services:
+  mlflow:
+    build: .
+    image: ddm501-t03-airflow:2.8.4
+    container_name: ddm501-t03-mlflow
+    # The base image's entrypoint always execs "airflow $@" -- bypass it so
+    # this service runs the mlflow server instead.
+    entrypoint: ["mlflow"]
+    command:
+      - server
+      - --backend-store-uri
+      - sqlite:////mlflow/mlflow.db
+      # A raw local path here would make the *client* (the airflow
+      # container, a different filesystem) write artifacts directly to that
+      # path and fail with PermissionError. --artifacts-destination plus the
+      # default mlflow-artifacts:/ root instead proxies every artifact
+      # read/write through this server's HTTP API, so only this container
+      # ever touches /mlflow/artifacts.
+      - --artifacts-destination
+      - /mlflow/artifacts
+      - --host
+      - 0.0.0.0
+      - --port
+      - "5000"
+    ports:
+      - "15030:5000"
+    user: "${AIRFLOW_UID:-50000}:0"
+    volumes:
+      - ./mlflow-data:/mlflow
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:5000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 30s
+    restart: unless-stopped
+
   airflow:
     build: .
     image: ddm501-t03-airflow:2.8.4
     container_name: ddm501-t03-airflow
     command: standalone
+    depends_on:
+      mlflow:
+        condition: service_healthy
     ports:
       # 18080, not 8080: Lab 2's Airflow already owns 8080 and you will want
       # to run both at some point.
@@ -31,18 +70,9 @@ services:
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
       AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: sqlite:////opt/airflow/airflow.db
-      # host.docker.internal reaches the host from inside this container, so
-      # this points at Tutorial 02-02's MLflow/MinIO ports published on the
-      # host -- the two docker-compose projects never join a shared network.
-      MLFLOW_TRACKING_URI: http://host.docker.internal:15020
-      MLFLOW_S3_ENDPOINT_URL: http://host.docker.internal:19010
-      AWS_ACCESS_KEY_ID: minio
-      AWS_SECRET_ACCESS_KEY: minio123
-      AWS_DEFAULT_REGION: us-east-1
-    extra_hosts:
-      # host.docker.internal is automatic on Docker Desktop (macOS/Windows);
-      # this makes it resolve on Linux too.
-      - "host.docker.internal:host-gateway"
+      # Same docker-compose project, same default network -- "mlflow" is the
+      # other service's hostname on it. No host.docker.internal needed now.
+      MLFLOW_TRACKING_URI: http://mlflow:5000
     user: "${AIRFLOW_UID:-50000}:0"
     volumes:
       - ./dags:/opt/airflow/dags

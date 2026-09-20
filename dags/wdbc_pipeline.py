@@ -31,10 +31,9 @@ LABELS = {"M", "B"}
 MAX_BAD_FRACTION = 0.05            # above this the extract is not worth using
 TEST_FRACTION = 0.20
 
-# Points at Tutorial 02-02's MLflow server -- run that stack first
-# (docker compose up -d in ddm501-t02-02-full-stack). The S3 credentials are
-# that stack's MinIO login; MLflow needs them to write the model artifact.
-MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", "http://127.0.0.1:15020")
+# This project's own MLflow server (see docker-compose.yml's `mlflow`
+# service) -- self-contained, no other tutorial's stack required.
+MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", "http://127.0.0.1:15030")
 MLFLOW_EXPERIMENT = "wdbc-pipeline"
 MLFLOW_MODEL_NAME = os.getenv("MLFLOW_MODEL_NAME", "wdbc-classifier")
 
