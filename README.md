@@ -141,35 +141,58 @@ Pass `--version N` to pull a specific model version instead of the latest, or
 
 ## Kết quả đã chạy thử (end-to-end)
 
-Đã build + chạy toàn bộ pipeline bằng `./setup.sh` (build cả `mlflow` lẫn
-`airflow`, đợi cả hai healthy) **hoàn toàn độc lập** — đã tắt hẳn stack của
-Tutorial 02-02 trong lúc test để xác nhận không còn phụ thuộc gì vào nó:
+Chạy ngày 2026-09-20 trên Windows 11 + Docker Desktop 4.91 (WSL 2.7.14),
+lệnh chạy từ Git Bash. Toàn bộ số liệu dưới đây lấy từ chính lần chạy này.
 
-- `airflow dags test wdbc_pipeline <ds>` — cả 6 task
-  (`ingest → validate → split → scale → train → report`) đều SUCCESS, nhiều
-  lần với các ngày khác nhau.
-- Task `train` đăng ký thành công model `wdbc-classifier` lên MLflow server
-  tự chứa của chính T03 (SQLite backend + artifact lưu qua HTTP proxy của
-  chính MLflow server, không cần S3/MinIO): `accuracy=0.9512`,
-  `roc_auc=0.9956`. Chạy lại vẫn tạo version mới mỗi lần, không ghi đè.
-- `scripts/fetch_and_predict.py` tải model về qua MLflow client API và dự
-  đoán đúng 5/5 dòng test so với nhãn thật (`diagnosis`).
+**Dựng stack.** `./setup.sh` lần đầu (tải image `apache/airflow:2.8.4`, build,
+đợi `mlflow` rồi `airflow` healthy) mất 5 phút 18 giây. Cả hai container
+`ddm501-t03-mlflow` và `ddm501-t03-airflow` đều `healthy`.
 
-Một lỗi gặp phải khi tự host artifact store cục bộ và cách sửa: đặt
-`--default-artifact-root` là một đường dẫn local (`/mlflow/artifacts`) khiến
-**client** (container `airflow`, filesystem khác với container `mlflow`) cố
-ghi file trực tiếp vào đường dẫn đó và bị `PermissionError`. Fix bằng
-`--artifacts-destination` (giữ nguyên artifact root mặc định
-`mlflow-artifacts:/`), để mọi thao tác đọc/ghi artifact đều đi qua HTTP API
-của chính MLflow server thay vì giả định hai container dùng chung filesystem.
+**Pipeline** — `docker compose exec airflow airflow dags test wdbc_pipeline 2026-08-25`:
+cả 6 task (`ingest → validate → split → scale → train → report`) SUCCESS.
+Extract 570 dòng, `validate` loại 6 dòng (1,05%: null 2, negative 1, bad_label 1,
+duplicate 1, outlier 1) → 564 dòng sạch, chia 441 train / 123 test. `train` đăng
+ký `wdbc-classifier` lên MLflow của chính project này: `accuracy=0.9512`,
+`roc_auc=0.9956`.
+
+| Bài | Kết quả thực tế |
+|---|---|
+| 1. Chạy lại cùng ngày | 7 file (`raw`, `clean`, `rejected`, `train`, `test` parquet, `scaler.json`, `validation_report.json`) giống hệt nhau theo `sha256`; `history.jsonl` vẫn 1 dòng cho `2026-08-25`. |
+| 2. Dữ liệu hỏng | `corrupt_extract.py` làm trống `mean_radius` ở 68/570 dòng (11,9%). `validate` fail với `13.0% of rows rejected, limit is 5%` và log ghi `Immediate failure requested` — không retry. `--repair` khôi phục `wdbc.csv` (hash trùng bản trong git). |
+| 3. Backfill | `airflow dags backfill ... -s 2026-08-22 -e 2026-08-24`: 3 run, 18 task thành công, 0 lỗi; xuất hiện 3 thư mục ngày mới, `history.jsonl` có 4 dòng (kèm `2026-08-25`). |
+| 5. Version mới mỗi lần chạy | Mỗi lần `train` chạy đều tạo một version mới, kể cả chạy lại cùng ngày: registry có 6 version (v1–v6) sau các lần chạy trên. |
+| 6. Kéo model về | `fetch_and_predict.py` tải `models:/wdbc-classifier/6`, dự đoán đúng 5/5 dòng test; `--version 1 --ds 2026-08-22 --rows 3` cũng đúng 3/3. |
+
+Bài 4 (đọc log của task hỏng trong Grid view) chưa được chụp lại; traceback của
+`validate` xem được qua log của lệnh ở bài 2.
+
+**Hai lỗi chỉ xuất hiện khi chạy trên Windows, đã sửa trong repo:**
+
+- `setup.sh`: Git Bash tự đổi `/opt/airflow/...` thành `C:/Program Files/Git/opt/airflow/...`
+  nên dòng `Password:` bị trống. Sửa bằng `MSYS_NO_PATHCONV=1` (không ảnh hưởng Linux/macOS).
+- `scripts/corrupt_extract.py --repair`: `shutil.copy` chép nội dung xong rồi `chmod`,
+  bị `PermissionError` trên ổ bind-mount của Windows. Đổi sang `shutil.copyfile`.
+
+Trên Windows, Docker Desktop cần WSL mới: nếu Docker báo `WSL update required`, chạy
+`wsl --update` trong PowerShell quyền admin rồi mở lại Docker Desktop.
+
+**Ghi chú thiết kế.** `mlflow` dùng `--artifacts-destination` (giữ artifact root mặc
+định `mlflow-artifacts:/`) thay vì một đường dẫn local làm `--default-artifact-root`.
+Nếu dùng đường dẫn local, client (container `airflow`, có filesystem khác container
+`mlflow`) sẽ cố ghi thẳng vào đường dẫn đó và bị `PermissionError`; với
+`--artifacts-destination`, mọi đọc/ghi artifact đi qua HTTP API của MLflow server.
 
 ### Ảnh chụp màn hình
 
+Bốn ảnh giao diện chụp trực tiếp bằng Edge headless từ Airflow (`:18080`) và MLflow
+(`:15030`) đang chạy. Hai ảnh terminal được dựng lại từ output thật đã ghi log
+(`setup.sh` là lần chạy thứ hai, image đã có cache; password đã được che).
+
 | | |
 |---|---|
-| `./setup.sh` — output thật: build cả 2 image, đợi `mlflow` rồi `airflow` healthy, in URL/password | ![setup.sh output](docs/screenshots/setup-sh-output.jpg) |
-| Airflow — DAG `wdbc_pipeline`, cả 6 task SUCCESS (container `ddm501-t03-airflow` đang chạy) | ![Airflow grid success](docs/screenshots/airflow-grid-success.jpg) |
-| Airflow — Graph view, `train` nối sau `scale`, trước `report` | ![Airflow graph](docs/screenshots/airflow-graph.jpg) |
-| MLflow — 2 version của `wdbc-classifier` đã đăng ký | ![MLflow registered versions](docs/screenshots/mlflow-registered-versions.jpg) |
-| MLflow — chi tiết run: `accuracy=0.9512`, `roc_auc=0.9956`, nguồn `airflow`, đã register `wdbc-classifier v2` | ![MLflow run metrics](docs/screenshots/mlflow-run-metrics.jpg) |
-| `scripts/fetch_and_predict.py` — output thật của lần chạy: tải `wdbc-classifier` version 2 và dự đoán đúng 5/5 dòng test | ![fetch_and_predict.py output](docs/screenshots/fetch-and-predict-output.jpg) |
+| `./setup.sh` — build, đợi `mlflow` rồi `airflow` healthy, in URL/password | ![setup.sh output](docs/screenshots/setup-sh-output.jpg) |
+| Airflow — Grid view: 4 run của `wdbc_pipeline`, cả 6 task đều SUCCESS | ![Airflow grid success](docs/screenshots/airflow-grid-success.jpg) |
+| Airflow — Graph view: `ingest → validate → split → scale → train → report` | ![Airflow graph](docs/screenshots/airflow-graph.jpg) |
+| MLflow — 6 version của `wdbc-classifier` đã đăng ký | ![MLflow registered versions](docs/screenshots/mlflow-registered-versions.jpg) |
+| MLflow — chi tiết run `wdbc-2026-08-25`: `accuracy=0.9512`, `roc_auc=0.9956`, đăng ký `wdbc-classifier v6` | ![MLflow run metrics](docs/screenshots/mlflow-run-metrics.jpg) |
+| `scripts/fetch_and_predict.py` — tải `wdbc-classifier` v6, dự đoán đúng 5/5 dòng test | ![fetch_and_predict.py output](docs/screenshots/fetch-and-predict-output.jpg) |

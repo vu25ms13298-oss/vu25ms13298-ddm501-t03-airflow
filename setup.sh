@@ -42,7 +42,9 @@ wait_healthy airflow
 
 echo
 echo "Airflow : http://127.0.0.1:18080  (user: admin)"
-echo "Password: $(docker compose exec -T airflow cat /opt/airflow/standalone_admin_password.txt)"
+# MSYS_NO_PATHCONV stops Git Bash on Windows from rewriting /opt/... into a
+# C:/Program Files/Git/opt/... path before docker sees it. No-op elsewhere.
+echo "Password: $(MSYS_NO_PATHCONV=1 docker compose exec -T airflow cat /opt/airflow/standalone_admin_password.txt)"
 echo "MLflow  : http://127.0.0.1:15030"
 echo
 echo "Run the pipeline:"

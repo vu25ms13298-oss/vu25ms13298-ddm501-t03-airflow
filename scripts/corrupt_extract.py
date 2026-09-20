@@ -26,14 +26,14 @@ def main() -> None:
 
     if args.repair:
         if BACKUP.exists():
-            shutil.copy(BACKUP, RAW)
+            shutil.copyfile(BACKUP, RAW)
             print(f"restored {RAW.name} from {BACKUP.name}")
         else:
             print("no backup found; nothing to restore")
         return
 
     if not BACKUP.exists():
-        shutil.copy(RAW, BACKUP)
+        shutil.copyfile(RAW, BACKUP)
         print(f"kept a copy at {BACKUP.name}")
 
     frame = pd.read_csv(RAW)

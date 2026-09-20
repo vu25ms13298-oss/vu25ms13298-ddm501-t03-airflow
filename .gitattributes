@@ -1,0 +1,3 @@
+# setup.sh runs under bash (Git Bash / Linux / macOS): it must stay LF even when
+# core.autocrlf would otherwise check it out as CRLF on Windows.
+*.sh text eol=lf
