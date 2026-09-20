@@ -1,6 +1,6 @@
 # Tutorial 03 — Airflow: a pipeline that runs without you
 
-**Học viên:** Lộc Nguyễn Phúc — MSSV MS13314 — DDM501 HN
+**Học viên:** Nguyen Van Vu — MSSV vu25ms13298 — DDM501 HN
 
 ## What this tutorial is for
 
