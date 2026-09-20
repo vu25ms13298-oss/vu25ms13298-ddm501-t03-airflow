@@ -167,6 +167,7 @@ của chính MLflow server thay vì giả định hai container dùng chung file
 
 | | |
 |---|---|
+| `./setup.sh` — output thật: build cả 2 image, đợi `mlflow` rồi `airflow` healthy, in URL/password | ![setup.sh output](docs/screenshots/setup-sh-output.jpg) |
 | Airflow — DAG `wdbc_pipeline`, cả 6 task SUCCESS (container `ddm501-t03-airflow` đang chạy) | ![Airflow grid success](docs/screenshots/airflow-grid-success.jpg) |
 | Airflow — Graph view, `train` nối sau `scale`, trước `report` | ![Airflow graph](docs/screenshots/airflow-graph.jpg) |
 | MLflow — 2 version của `wdbc-classifier` đã đăng ký | ![MLflow registered versions](docs/screenshots/mlflow-registered-versions.jpg) |
