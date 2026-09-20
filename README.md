@@ -156,6 +156,15 @@ với MLflow server của Tutorial 02-02 chạy song song:
   `.venv-scripts`) tải model về qua MLflow client API và dự đoán đúng
   5/5 dòng test so với nhãn thật (`diagnosis`).
 
+### Ảnh chụp màn hình
+
+| | |
+|---|---|
+| Airflow — DAG `wdbc_pipeline`, cả 6 task SUCCESS (container `ddm501-t03-airflow` đang chạy) | ![Airflow grid success](docs/screenshots/airflow-grid-success.jpg) |
+| Airflow — Graph view, `train` nối sau `scale`, trước `report` | ![Airflow graph](docs/screenshots/airflow-graph.jpg) |
+| MLflow — 2 version của `wdbc-classifier` đã đăng ký | ![MLflow registered versions](docs/screenshots/mlflow-registered-versions.jpg) |
+| MLflow — chi tiết run: `accuracy=0.9512`, `roc_auc=0.9956`, nguồn `airflow`, đã register `wdbc-classifier v2` | ![MLflow run metrics](docs/screenshots/mlflow-run-metrics.jpg) |
+
 Một vấn đề gặp phải và đã sửa: pin `boto3==1.35.90` ban đầu xung đột với
 constraint file của Airflow 2.8.4 (đã pin sẵn `boto3==1.33.13` cho amazon
 provider) — bỏ pin cứng, để `boto3` cài theo constraint file là chạy được.
