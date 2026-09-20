@@ -5,8 +5,8 @@ Pull the registered WDBC model back from MLflow and score a few test rows.
     python scripts/fetch_and_predict.py --version 2 --ds 2026-08-25 --rows 10
 
 Talks only to MLflow's client API (tracking server + model registry) -- no
-Airflow, no copied model file. Needs the same MLFLOW_TRACKING_URI / AWS_*
-env vars as the DAG's train task; see docker-compose.yml.
+Airflow, no copied model file. Needs the same MLFLOW_TRACKING_URI as the
+DAG's train task; see docker-compose.yml.
 """
 import argparse
 import os
@@ -42,7 +42,7 @@ def main() -> None:
     parser.add_argument("--rows", type=int, default=5, help="how many test rows to score")
     args = parser.parse_args()
 
-    mlflow.set_tracking_uri(os.getenv("MLFLOW_TRACKING_URI", "http://127.0.0.1:15020"))
+    mlflow.set_tracking_uri(os.getenv("MLFLOW_TRACKING_URI", "http://127.0.0.1:15030"))
     client = mlflow.MlflowClient()
     version = args.version or latest_version(client, MODEL_NAME)
 
