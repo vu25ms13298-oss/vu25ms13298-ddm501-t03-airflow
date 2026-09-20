@@ -165,7 +165,3 @@ với MLflow server của Tutorial 02-02 chạy song song:
 | MLflow — 2 version của `wdbc-classifier` đã đăng ký | ![MLflow registered versions](docs/screenshots/mlflow-registered-versions.jpg) |
 | MLflow — chi tiết run: `accuracy=0.9512`, `roc_auc=0.9956`, nguồn `airflow`, đã register `wdbc-classifier v2` | ![MLflow run metrics](docs/screenshots/mlflow-run-metrics.jpg) |
 | `scripts/fetch_and_predict.py` — output thật của lần chạy: tải `wdbc-classifier` version 2 và dự đoán đúng 5/5 dòng test | ![fetch_and_predict.py output](docs/screenshots/fetch-and-predict-output.jpg) |
-
-Một vấn đề gặp phải và đã sửa: pin `boto3==1.35.90` ban đầu xung đột với
-constraint file của Airflow 2.8.4 (đã pin sẵn `boto3==1.33.13` cho amazon
-provider) — bỏ pin cứng, để `boto3` cài theo constraint file là chạy được.
