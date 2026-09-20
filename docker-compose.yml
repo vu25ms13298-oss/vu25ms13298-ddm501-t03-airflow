@@ -1,0 +1,58 @@
+# Tutorial 03 — Airflow
+#
+#   docker compose up -d --build      # first time: builds the image, then starts it
+#   docker compose ps                 # wait for STATUS = healthy (about a minute)
+#   docker compose exec airflow cat /opt/airflow/standalone_admin_password.txt
+#
+# On Linux, first create a .env file next to this one containing:
+#     AIRFLOW_UID=1000                # the number `id -u` prints
+#
+# Then open http://127.0.0.1:18080 and log in as `admin`.
+#
+# The train task registers into Tutorial 02-02's MLflow server, so start that
+# stack first (docker compose up -d in ddm501-t02-02-full-stack). The
+# AWS_* values below are that stack's MinIO login from its .env -- change
+# them here too if you changed them there.
+
+name: ddm501-t03
+
+services:
+  airflow:
+    build: .
+    image: ddm501-t03-airflow:2.8.4
+    container_name: ddm501-t03-airflow
+    command: standalone
+    ports:
+      # 18080, not 8080: Lab 2's Airflow already owns 8080 and you will want
+      # to run both at some point.
+      - "18080:8080"
+    environment:
+      AIRFLOW__CORE__EXECUTOR: SequentialExecutor
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: sqlite:////opt/airflow/airflow.db
+      # host.docker.internal reaches the host from inside this container, so
+      # this points at Tutorial 02-02's MLflow/MinIO ports published on the
+      # host -- the two docker-compose projects never join a shared network.
+      MLFLOW_TRACKING_URI: http://host.docker.internal:15020
+      MLFLOW_S3_ENDPOINT_URL: http://host.docker.internal:19010
+      AWS_ACCESS_KEY_ID: minio
+      AWS_SECRET_ACCESS_KEY: minio123
+      AWS_DEFAULT_REGION: us-east-1
+    extra_hosts:
+      # host.docker.internal is automatic on Docker Desktop (macOS/Windows);
+      # this makes it resolve on Linux too.
+      - "host.docker.internal:host-gateway"
+    user: "${AIRFLOW_UID:-50000}:0"
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./data:/opt/airflow/data
+      - ./logs:/opt/airflow/logs
+      - ./scripts:/opt/airflow/scripts
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 60s
+    restart: unless-stopped
