@@ -1,57 +1,57 @@
-# Automated ML Pipeline với Airflow
+# Automated ML Pipeline with Airflow
 
-**Sinh viên:** Nguyen Van Vu — MSSV vu25ms13298 — DDM501 HN
+**Student:** Nguyen Van Vu — Student ID vu25ms13298 — DDM501 HN
 
-## Giới thiệu dự án
+## Project Overview
 
-Đây là một **data pipeline tự động hóa** sử dụng Apache Airflow để xử lý và huấn luyện mô hình machine learning trên dataset WDBC (Wisconsin Breast Cancer). Pipeline tự động chạy theo lịch trình, xử lý dữ liệu từ đầu đến cuối mà không cần can thiệp thủ công.
+This is an **automated data pipeline** using Apache Airflow to process and train a machine learning model on the WDBC (Wisconsin Breast Cancer) dataset. The pipeline runs automatically on schedule, processing data end-to-end without manual intervention.
 
-**Dataset:** WDBC (Breast Cancer) — 570 bản ghi, 30 đặc trưng số, dự đoán chẩn đoán (Malignant/Benign)
+**Dataset:** WDBC (Breast Cancer) — 570 records, 30 numeric features, classification task (Malignant/Benign)
 
-## Kiến trúc Pipeline
+## Pipeline Architecture
 
-Pipeline bao gồm **6 tác vụ** được thực thi tự động:
+The pipeline consists of **6 tasks** executed automatically:
 
 ```
 ingest → validate → split → scale → train → report
 ```
 
-| Tác vụ | Mô tả | Output |
-|--------|--------|---------|
-| **ingest** | Đọc dữ liệu từ `data/raw/wdbc.csv`, snapshot vào parquet | `raw.parquet` |
-| **validate** | Kiểm tra chất lượng dữ liệu, loại bỏ dòng lỗi (tối đa 5%) | `clean.parquet`, `rejected.parquet`, `validation_report.json` |
-| **split** | Chia train/test theo hash của sample_id (20% test, không random) | `train_unscaled.parquet`, `test_unscaled.parquet` |
-| **scale** | Chuẩn hóa đặc trưng bằng z-score | `train.parquet`, `test.parquet`, `scaler.json` |
-| **train** | Huấn luyện LogisticRegression, đăng ký model lên MLflow | MLflow run, model version |
-| **report** | Ghi kết quả vào lịch sử (`history.jsonl`) | `summary.json`, `history.jsonl` |
+| Task | Description | Output |
+|------|--------|---------|
+| **ingest** | Read data from `data/raw/wdbc.csv`, snapshot to parquet | `raw.parquet` |
+| **validate** | Check data quality, remove bad rows (max 5%) | `clean.parquet`, `rejected.parquet`, `validation_report.json` |
+| **split** | Deterministic train/test split via sample_id hash (20% test, no randomness) | `train_unscaled.parquet`, `test_unscaled.parquet` |
+| **scale** | Feature normalization using z-score | `train.parquet`, `test.parquet`, `scaler.json` |
+| **train** | Train LogisticRegression, register model on MLflow | MLflow run, model version |
+| **report** | Write results to history log (`history.jsonl`) | `summary.json`, `history.jsonl` |
 
-## Hệ thống độc lập (Self-contained)
+## Self-Contained System
 
-MLflow được **tích hợp sẵn** trong project, không cần dependency bên ngoài:
+MLflow is **built into the project**, no external dependencies needed:
 - Backend: SQLite (`./mlflow-data/mlflow.db`)
-- Artifact store: HTTP proxy qua MLflow server
-- Config: `docker-compose.yml` tự động setup
+- Artifact store: HTTP proxy through MLflow server
+- Config: `docker-compose.yml` sets up everything automatically
 
-Khi chạy qua `docker compose`, tất cả env vars được đặt sẵn. Nếu chạy Airflow local, chỉ cần:
+When running via `docker compose`, all env vars are pre-configured. For local Airflow, just set:
 
 ```bash
 export MLFLOW_TRACKING_URI=http://127.0.0.1:15030
 ```
 
-## Cài đặt và Chạy
+## Installation and Setup
 
-Có 2 cách chạy pipeline — lựa chọn tùy theo nhu cầu:
+Two ways to run the pipeline — choose based on your needs:
 
-### Cách A: Chạy Local (macOS, Linux, Windows + WSL2)
+### Method A: Local Execution (macOS, Linux, Windows + WSL2)
 
-**Yêu cầu:** Python 3.11, pip, terminal bash-compatible
+**Requirements:** Python 3.11, pip, bash-compatible terminal
 
 ```bash
-# Tạo virtual environment
+# Create virtual environment
 python3.11 -m venv .venv
-source .venv/bin/activate  # hoặc .venv\Scripts\activate trên Windows
+source .venv/bin/activate  # or .venv\Scripts\activate on Windows
 
-# Cài dependencies
+# Install dependencies
 pip install -r requirements.txt \
   --constraint https://raw.githubusercontent.com/apache/airflow/constraints-2.8.4/constraints-3.11.txt
 
@@ -61,82 +61,82 @@ export AIRFLOW__CORE__DAGS_FOLDER=$PWD/dags
 export AIRFLOW__CORE__LOAD_EXAMPLES=False
 export MLFLOW_TRACKING_URI=http://127.0.0.1:15030
 
-# Khởi chạy
+# Start
 airflow standalone
 ```
 
-Giao diện Airflow: <http://127.0.0.1:8080>  
-Mật khẩu được in ra console lần đầu chạy (hoặc xem `$AIRFLOW_HOME/standalone_admin_password.txt`)
+Airflow UI: <http://127.0.0.1:8080>  
+Password printed to console on first run (also in `$AIRFLOW_HOME/standalone_admin_password.txt`)
 
-**Ưu điểm:** Nhanh, nhẹ, dễ debug  
-**Nhược điểm:** Cần Python 3.11 đúng version, constraint file lớn
+**Pros:** Fast, lightweight, easy debugging  
+**Cons:** Requires exact Python 3.11, large constraint file
 
-### Cách B: Docker Compose (Recommended)
+### Method B: Docker Compose (Recommended)
 
-**Yêu cầu:** Docker Desktop, WSL2 (trên Windows)
+**Requirements:** Docker Desktop, WSL2 (on Windows)
 
-**Chạy nhanh nhất:**
+**Fastest startup:**
 ```bash
 ./setup.sh
 ```
 
-Script này sẽ:
-1. Build image từ `Dockerfile`
-2. Khởi chạy 2 containers: `mlflow` + `airflow`
-3. Đợi cả hai healthy (khoảng 1-2 phút)
-4. In ra URL và mật khẩu
+This script will:
+1. Build image from `Dockerfile`
+2. Start 2 containers: `mlflow` + `airflow`
+3. Wait for both to be healthy (~1-2 minutes)
+4. Print URLs and password
 
 **Output:**
 ```
 Airflow : http://127.0.0.1:18080  (user: admin)
-Password: [mật khẩu ngẫu nhiên]
+Password: [random password]
 MLflow  : http://127.0.0.1:15030
 ```
 
-**Chạy thủ công (nếu không có `./setup.sh`):**
+**Manual startup (without `./setup.sh`):**
 ```bash
-# Trên Linux, tạo .env với AIRFLOW_UID
+# On Linux, create .env with AIRFLOW_UID
 echo "AIRFLOW_UID=$(id -u)" > .env
 
-# Build và start containers
+# Build and start containers
 docker compose up -d --build
 
-# Kiểm tra trạng thái (chờ STATUS = healthy)
+# Check status (wait for STATUS = healthy)
 docker compose ps
 
-# Lấy mật khẩu admin
+# Get admin password
 docker compose exec airflow cat /opt/airflow/standalone_admin_password.txt
 ```
 
-**Lần chạy tiếp theo:**
+**Subsequent runs:**
 ```bash
 docker compose up -d
-# hoặc
+# or
 ./setup.sh
 ```
 
-Docker sẽ reuse image và container, nhanh hơn gấp nhiều lần.
+Docker reuses the image and container, much faster on restart.
 
-**Port:** 18080 (Airflow), 15030 (MLflow) — tránh xung đột với các dự án khác
+**Ports:** 18080 (Airflow), 15030 (MLflow) — avoids conflicts with other projects
 
-**Ưu điểm:** Không phụ thuộc version Python, môi trường sạch, dễ share  
-**Nhược điểm:** Cần Docker, khởi chạy lần đầu chậm
+**Pros:** Python version-agnostic, clean environment, easy to share  
+**Cons:** Requires Docker, slow first start
 
-## Cấu trúc Dự án
+## Project Structure
 
 ```
 .
 ├── dags/
-│   └── wdbc_pipeline.py          # DAG chính (6 tasks)
+│   └── wdbc_pipeline.py          # Main DAG (6 tasks)
 ├── scripts/
-│   ├── fetch_and_predict.py      # Tải model và dự đoán
-│   └── corrupt_extract.py        # Công cụ test: phá hỏng data để kiểm tra validation
+│   ├── fetch_and_predict.py      # Load model and predict
+│   └── corrupt_extract.py        # Test tool: corrupt data to test validation
 ├── data/
 │   ├── raw/
-│   │   ├── wdbc.csv              # Dataset gốc
-│   │   └── wdbc.csv.orig         # Backup (cho corrupt_extract.py --repair)
-│   └── staging/                  # Output của mỗi run
-│       ├── 2026-08-25/           # Dữ liệu cho một ngày cụ thể
+│   │   ├── wdbc.csv              # Original dataset
+│   │   └── wdbc.csv.orig         # Backup (for corrupt_extract.py --repair)
+│   └── staging/                  # Outputs from each run
+│       ├── 2026-08-25/           # Data for a specific date
 │       │   ├── raw.parquet
 │       │   ├── clean.parquet
 │       │   ├── rejected.parquet
@@ -145,77 +145,77 @@ Docker sẽ reuse image và container, nhanh hơn gấp nhiều lần.
 │       │   ├── scaler.json
 │       │   ├── summary.json
 │       │   └── validation_report.json
-│       └── history.jsonl         # Lịch sử tất cả runs (1 dòng/run)
-├── docs/screenshots/             # Ảnh chụp kết quả thực tế
-├── docker-compose.yml            # Config 2 services: airflow + mlflow
-├── Dockerfile                    # Image base: apache/airflow:2.8.4
-├── setup.sh                      # Script khởi động nhanh (Docker)
+│       └── history.jsonl         # History of all runs (1 line per run)
+├── docs/screenshots/             # Screenshots of actual results
+├── docker-compose.yml            # Config for 2 services: airflow + mlflow
+├── Dockerfile                    # Base: apache/airflow:2.8.4
+├── setup.sh                      # Quick startup script (Docker)
 ├── requirements.txt              # Python dependencies
-└── .gitattributes               # Đảm bảo setup.sh luôn LF
+└── .gitattributes               # Ensure setup.sh stays LF
 ```
 
-## Chạy Pipeline
+## Running the Pipeline
 
-### Lần đầu tiên
+### First Time
 
 ```bash
-# Nếu dùng Docker
+# Using Docker
 ./setup.sh
 
-# Nếu chạy local, đảm bảo Airflow đã chạy ở background
-# Sau đó trong terminal khác:
+# Using local Airflow (ensure it's running in background)
+# Then in another terminal:
 ```
 
-### Chạy DAG cho một ngày cụ thể
+### Run DAG for a Specific Date
 
 ```bash
-# Nếu dùng Docker
+# Using Docker
 docker compose exec airflow airflow dags test wdbc_pipeline 2026-08-25
 
-# Nếu chạy local (airflow đã standalone)
+# Using local Airflow (airflow standalone already running)
 airflow dags test wdbc_pipeline 2026-08-25
 ```
 
-Lệnh này sẽ:
-1. Chạy toàn bộ 6 tasks tuần tự
-2. Tạo thư mục `data/staging/2026-08-25/` chứa output
-3. Ghi kết quả vào `data/staging/history.jsonl`
-4. Đăng ký model version mới lên MLflow
+This will:
+1. Execute all 6 tasks sequentially
+2. Create `data/staging/2026-08-25/` with outputs
+3. Write results to `data/staging/history.jsonl`
+4. Register new model version on MLflow
 
-### Xem kết quả
+### View Results
 
-**Output của một run:**
+**Output of a single run:**
 ```
 data/staging/2026-08-25/
-├── raw.parquet              # Snapshot dữ liệu thô (570 dòng)
-├── clean.parquet            # Dữ liệu hợp lệ (564 dòng)
-├── rejected.parquet         # Dòng bị loại (6 dòng)
-├── validation_report.json   # Chi tiết lỗi validation
-├── train.parquet            # Dữ liệu training sau scaling (441 dòng)
-├── test.parquet             # Dữ liệu testing sau scaling (123 dòng)
-├── scaler.json              # Tham số chuẩn hóa (mean, std)
-├── summary.json             # Tóm tắt: metrics, model_version, accuracy, roc_auc
+├── raw.parquet              # Raw data snapshot (570 rows)
+├── clean.parquet            # Valid data (564 rows)
+├── rejected.parquet         # Invalid rows (6 rows)
+├── validation_report.json   # Validation errors
+├── train.parquet            # Training data after scaling (441 rows)
+├── test.parquet             # Test data after scaling (123 rows)
+├── scaler.json              # Normalization params (mean, std)
+├── summary.json             # Summary: metrics, version, accuracy, roc_auc
 └── validation_report.json
 ```
 
-**Lịch sử runs:**
+**Run history:**
 ```bash
-# Xem các runs đã chạy
+# View all runs
 cat data/staging/history.jsonl
 
-# Kết quả: mỗi dòng là một run, JSON format
+# Each line is one run in JSON format
 {"ds": "2026-08-25", "clean_rows": 564, "accuracy": 0.9512, ...}
 ```
 
-**MLflow UI:**
+**Access UIs:**
 - **Airflow:** <http://127.0.0.1:18080> → DAGs → `wdbc_pipeline`
-- **MLflow:** <http://127.0.0.1:15030> → Models → `wdbc-classifier` → xem các versions
+- **MLflow:** <http://127.0.0.1:15030> → Models → `wdbc-classifier` → view versions
 
-## Tải và Dự đoán với Model
+## Loading and Making Predictions with Model
 
-**Script:** `scripts/fetch_and_predict.py` — tải model từ MLflow registry (không cần Airflow) và dự đoán trên test set.
+**Script:** `scripts/fetch_and_predict.py` — loads model from MLflow registry (Airflow not needed) and predicts on test set.
 
-### Cách nhanh nhất (Docker)
+### Fastest Method (Docker)
 
 ```bash
 docker compose exec airflow python scripts/fetch_and_predict.py
@@ -229,9 +229,9 @@ WDBC-0007  actual=M  predicted=M  p(malignant)=0.9999
 ...
 ```
 
-### Chạy trên máy host (không cần Docker)
+### Running on Host Machine (No Docker)
 
-Chỉ cần: `mlflow`, `scikit-learn`, `pandas`, `pyarrow` (không cần Airflow)
+Only needs: `mlflow`, `scikit-learn`, `pandas`, `pyarrow` (no Airflow)
 
 ```bash
 python3 -m venv .venv-scripts
@@ -243,51 +243,51 @@ export MLFLOW_TRACKING_URI=http://127.0.0.1:15030
 python scripts/fetch_and_predict.py
 ```
 
-### Tuỳ chọn
+### Options
 
 ```bash
-# Dùng version cụ thể (không phải latest)
+# Use specific version (not latest)
 python scripts/fetch_and_predict.py --version 3
 
-# Dùng test set của ngày cụ thể
+# Use test set from specific date
 python scripts/fetch_and_predict.py --ds 2026-08-22
 
-# Dự đoán 10 dòng
+# Predict 10 rows
 python scripts/fetch_and_predict.py --rows 10
 
-# Kết hợp
+# Combine options
 python scripts/fetch_and_predict.py --version 1 --ds 2026-08-22 --rows 5
 ```
 
-## Bài tập (Exercises)
+## Exercises
 
-Những bài tập dưới đây giúp hiểu rõ tính chất của pipeline:
+These exercises help understand pipeline characteristics:
 
-| # | Bài tập | Kỳ vọng | Ghi chú |
-|---|---------|---------|---------|
-| **1** | Chạy cùng ngày 2 lần:<br>`airflow dags test wdbc_pipeline 2026-08-25`<br>`airflow dags test wdbc_pipeline 2026-08-25` | 7 file output giống hệt nhau (check `sha256sum`)<br>`history.jsonl` vẫn 1 dòng cho ngày đó<br>→ Re-run là idempotent | Cho thấy pipeline có quy tắc rõ ràng, không random. Split dùng hash(sample_id), không random seed. |
-| **2** | Làm hỏng data:<br>`python scripts/corrupt_extract.py`<br>Rồi chạy lại:<br>`airflow dags test wdbc_pipeline 2026-08-25`<br>Sửa lại:<br>`python scripts/corrupt_extract.py --repair` | Task `validate` fail ngay (không retry 3 lần)<br>Log: `13.0% of rows rejected, limit is 5%`<br>và `Immediate failure requested`<br>→ AirflowFailException tắt retry | Cho thấy Airflow có cơ chế fail-fast cho lỗi logic. Khác với timeout/error — nếu data hỏng, retry vô ích. |
-| **3** | Chạy backfill nhiều ngày:<br>`airflow dags backfill wdbc_pipeline -s 2026-08-22 -e 2026-08-24` | 3 thư mục mới:<br>`data/staging/2026-08-22/`<br>`data/staging/2026-08-23/`<br>`data/staging/2026-08-24/`<br>`history.jsonl` có 4 dòng (kèm 25) | Airflow xử lý batch theo ngày tự động. Mỗi ngày là một execution_date riêng biệt, output tách nhau. |
-| **4** | Làm task fail (ví dụ: corrupt data ở bài 2), mở Airflow UI:<br>Grid view → click task `validate` → Logs | Xem traceback chi tiết không cần SSH<br>Hiển thị dòng code lỗi, exception đầy đủ | Airflow UI giúp debug mà không cần truy cập container trực tiếp. |
-| **5** | Chạy lại ngày đó rồi vào MLflow UI<br>`airflow dags test wdbc_pipeline 2026-08-25`<br>→ <http://127.0.0.1:15030> Models → `wdbc-classifier` | Version mới được tạo<br>v1 → v2 → ... → v_n<br>Mỗi run tạo 1 version, kể cả re-run cùng ngày | MLflow tự track version, không cần quản lý thủ công. Giúp so sánh model qua thời gian. |
-| **6** | Load model từ registry:<br>`python scripts/fetch_and_predict.py`<br>hoặc trong Docker:<br>`docker compose exec airflow python scripts/fetch_and_predict.py` | Dự đoán đúng trên test set<br>Không cần Airflow chạy<br>Chỉ cần MLflow server + model code | Tách riêng inference từ training pipeline. Model được version hóa, tái sử dụng dễ dàng. |
+| # | Exercise | Expected Result | Notes |
+|---|----------|---------|---------|
+| **1** | Run same date twice:<br>`airflow dags test wdbc_pipeline 2026-08-25`<br>`airflow dags test wdbc_pipeline 2026-08-25` | 7 output files byte-identical (check `sha256sum`)<br>`history.jsonl` still has 1 line for that date<br>→ Re-run is idempotent | Shows pipeline has deterministic rules, no randomness. Split uses hash(sample_id), no random seed. |
+| **2** | Corrupt data:<br>`python scripts/corrupt_extract.py`<br>Then re-run:<br>`airflow dags test wdbc_pipeline 2026-08-25`<br>Fix:<br>`python scripts/corrupt_extract.py --repair` | Task `validate` fails immediately (no 3 retries)<br>Log: `13.0% of rows rejected, limit is 5%`<br>and `Immediate failure requested`<br>→ AirflowFailException skips retries | Shows Airflow has fail-fast for logic errors. Different from timeout/errors — corrupt data won't be fixed by retrying. |
+| **3** | Run backfill multi-day:<br>`airflow dags backfill wdbc_pipeline -s 2026-08-22 -e 2026-08-24` | 3 new directories:<br>`data/staging/2026-08-22/`<br>`data/staging/2026-08-23/`<br>`data/staging/2026-08-24/`<br>`history.jsonl` has 4 lines (includes 25th) | Airflow auto-processes batch by date. Each date is separate execution_date, outputs separated. |
+| **4** | Make task fail (e.g., corrupt data from ex. 2), open Airflow UI:<br>Grid view → click task `validate` → Logs | See full traceback without SSH<br>Shows code line, full exception | Airflow UI enables debugging without container access. |
+| **5** | Re-run date then check MLflow UI<br>`airflow dags test wdbc_pipeline 2026-08-25`<br>→ <http://127.0.0.1:15030> Models → `wdbc-classifier` | New version created<br>v1 → v2 → ... → v_n<br>Each run creates version, even re-runs of same date | MLflow auto-tracks versions, no manual management. Enables model comparison over time. |
+| **6** | Load model from registry:<br>`python scripts/fetch_and_predict.py`<br>or in Docker:<br>`docker compose exec airflow python scripts/fetch_and_predict.py` | Predictions correct on test set<br>Doesn't need Airflow running<br>Only needs MLflow server + model code | Separates inference from training pipeline. Model versioned, reusable easily. |
 
-### Các lệnh hữu ích
+### Useful Commands
 
 ```bash
-# Xem DAG graph
+# View DAG runs
 airflow dags list-runs wdbc_pipeline
 
-# Xem logs của task cụ thể
+# View logs for specific task
 docker compose exec airflow airflow tasks log wdbc_pipeline ingest 2026-08-25
 
-# Clear dữ liệu một ngày (reset để chạy lại)
+# Clear data for one date (reset for re-run)
 rm -rf data/staging/2026-08-25/
 
-# Dừng containers
+# Stop containers
 docker compose down
 
-# Xem model versions
+# View model versions
 docker compose exec airflow python -c "
 import mlflow
 mlflow.set_tracking_uri('http://127.0.0.1:15030')
@@ -301,84 +301,26 @@ for v in model.latest_versions:
 
 ### Docker/WSL Issues
 
-| Vấn đề | Nguyên nhân | Giải pháp |
+| Issue | Cause | Solution |
 |--------|-----------|---------|
-| `Docker Desktop is unable to start` | WSL kernel cũ | Chạy `wsl --update` trong PowerShell (admin), rồi mở lại Docker Desktop |
-| `docker: command not found` | Docker chưa có trong PATH | Thêm Docker path vào PATH hoặc restart terminal sau khi cài Docker Desktop |
-| Container không healthy sau 2 phút | Image chưa pull xong | Chạy `docker compose logs airflow` để xem chi tiết; đợi thêm hoặc check network |
-| `Permission denied` khi copy file (Windows) | Windows bind mount không hỗ trợ `chmod` | Dùng `shutil.copyfile` thay vì `shutil.copy` (đã sửa trong repo) |
+| `Docker Desktop is unable to start` | Old WSL kernel | Run `wsl --update` in PowerShell (admin), restart Docker |
+| `docker: command not found` | Docker not in PATH | Add Docker to PATH or restart terminal after install |
+| Container not healthy after 2 minutes | Image still downloading | Check `docker compose logs airflow`; wait or check network |
+| `Permission denied` copying files (Windows) | Windows bind mount doesn't support `chmod` | Use `shutil.copyfile` instead of `shutil.copy` (already fixed) |
 
 ### Airflow Issues
 
-| Vấn đề | Nguyên nhân | Giải pháp |
+| Issue | Cause | Solution |
 |--------|-----------|---------|
-| `No module named airflow` | Virtual environment chưa activate | Chạy `source .venv/bin/activate` (Linux/Mac) hoặc `.venv\Scripts\activate` (Windows) |
-| DAG không hiển thị | `AIRFLOW__CORE__DAGS_FOLDER` sai | Kiểm tra: `echo $AIRFLOW__CORE__DAGS_FOLDER` phải là đường dẫn đầy đủ |
-| Task timeout | Data quá lớn hoặc máy chậm | Tăng `execution_timeout` trong DAG hoặc giảm batch size |
-| `MLFLOW_TRACKING_URI` không set | Biến môi trường bị xóa | Chạy `export MLFLOW_TRACKING_URI=http://127.0.0.1:15030` lại |
+| `No module named airflow` | Virtual environment not activated | Run `source .venv/bin/activate` (Linux/Mac) or `.venv\Scripts\activate` (Windows) |
+| DAG not showing | `AIRFLOW__CORE__DAGS_FOLDER` wrong | Check: `echo $AIRFLOW__CORE__DAGS_FOLDER` should be full path |
+| Task timeout | Large data or slow machine | Increase `execution_timeout` in DAG or reduce batch size |
+| `MLFLOW_TRACKING_URI` not set | Environment variable deleted | Run `export MLFLOW_TRACKING_URI=http://127.0.0.1:15030` again |
 
 ### MLflow Issues
 
-| Vấn đề | Nguyên nhân | Giải pháp |
+| Issue | Cause | Solution |
 |--------|-----------|---------|
-| MLflow server không chạy | Process bị kill | Restart: `docker compose restart mlflow` hoặc `./setup.sh` |
-| Model không load từ registry | Version không tồn tại | Chạy DAG trước để tạo version: `airflow dags test wdbc_pipeline 2026-08-25` |
-| Artifact upload lỗi | Đường dẫn artifact store sai | Dùng `--artifacts-destination file:///path` (không phải `C:\path` trên Windows) |
-
-## Kết quả đã chạy thử (end-to-end)
-
-Chạy ngày 2026-09-20 trên Windows 11 + Docker Desktop 4.91 (WSL 2.7.14),
-lệnh chạy từ Git Bash. Toàn bộ số liệu dưới đây lấy từ chính lần chạy này.
-
-**Dựng stack.** `./setup.sh` lần đầu (tải image `apache/airflow:2.8.4`, build,
-đợi `mlflow` rồi `airflow` healthy) mất 5 phút 18 giây. Cả hai container
-`ddm501-t03-mlflow` và `ddm501-t03-airflow` đều `healthy`.
-
-**Pipeline** — `docker compose exec airflow airflow dags test wdbc_pipeline 2026-08-25`:
-cả 6 task (`ingest → validate → split → scale → train → report`) SUCCESS.
-Extract 570 dòng, `validate` loại 6 dòng (1,05%: null 2, negative 1, bad_label 1,
-duplicate 1, outlier 1) → 564 dòng sạch, chia 441 train / 123 test. `train` đăng
-ký `wdbc-classifier` lên MLflow của chính project này: `accuracy=0.9512`,
-`roc_auc=0.9956`.
-
-| Bài | Kết quả thực tế |
-|---|---|
-| 1. Chạy lại cùng ngày | 7 file (`raw`, `clean`, `rejected`, `train`, `test` parquet, `scaler.json`, `validation_report.json`) giống hệt nhau theo `sha256`; `history.jsonl` vẫn 1 dòng cho `2026-08-25`. |
-| 2. Dữ liệu hỏng | `corrupt_extract.py` làm trống `mean_radius` ở 68/570 dòng (11,9%). `validate` fail với `13.0% of rows rejected, limit is 5%` và log ghi `Immediate failure requested` — không retry. `--repair` khôi phục `wdbc.csv` (hash trùng bản trong git). |
-| 3. Backfill | `airflow dags backfill ... -s 2026-08-22 -e 2026-08-24`: 3 run, 18 task thành công, 0 lỗi; xuất hiện 3 thư mục ngày mới, `history.jsonl` có 4 dòng (kèm `2026-08-25`). |
-| 5. Version mới mỗi lần chạy | Mỗi lần `train` chạy đều tạo một version mới, kể cả chạy lại cùng ngày: registry có 6 version (v1–v6) sau các lần chạy trên. |
-| 6. Kéo model về | `fetch_and_predict.py` tải `models:/wdbc-classifier/6`, dự đoán đúng 5/5 dòng test; `--version 1 --ds 2026-08-22 --rows 3` cũng đúng 3/3. |
-
-Bài 4 (đọc log của task hỏng trong Grid view) chưa được chụp lại; traceback của
-`validate` xem được qua log của lệnh ở bài 2.
-
-**Hai lỗi chỉ xuất hiện khi chạy trên Windows, đã sửa trong repo:**
-
-- `setup.sh`: Git Bash tự đổi `/opt/airflow/...` thành `C:/Program Files/Git/opt/airflow/...`
-  nên dòng `Password:` bị trống. Sửa bằng `MSYS_NO_PATHCONV=1` (không ảnh hưởng Linux/macOS).
-- `scripts/corrupt_extract.py --repair`: `shutil.copy` chép nội dung xong rồi `chmod`,
-  bị `PermissionError` trên ổ bind-mount của Windows. Đổi sang `shutil.copyfile`.
-
-Trên Windows, Docker Desktop cần WSL mới: nếu Docker báo `WSL update required`, chạy
-`wsl --update` trong PowerShell quyền admin rồi mở lại Docker Desktop.
-
-**Ghi chú thiết kế.** `mlflow` dùng `--artifacts-destination` (giữ artifact root mặc
-định `mlflow-artifacts:/`) thay vì một đường dẫn local làm `--default-artifact-root`.
-Nếu dùng đường dẫn local, client (container `airflow`, có filesystem khác container
-`mlflow`) sẽ cố ghi thẳng vào đường dẫn đó và bị `PermissionError`; với
-`--artifacts-destination`, mọi đọc/ghi artifact đi qua HTTP API của MLflow server.
-
-### Ảnh chụp màn hình
-
-Bốn ảnh giao diện chụp trực tiếp bằng Edge headless từ Airflow (`:18080`) và MLflow
-(`:15030`) đang chạy. Hai ảnh terminal được dựng lại từ output thật đã ghi log
-(`setup.sh` là lần chạy thứ hai, image đã có cache; password đã được che).
-
-| | |
-|---|---|
-| `./setup.sh` — build, đợi `mlflow` rồi `airflow` healthy, in URL/password | ![setup.sh output](docs/screenshots/setup-sh-output.jpg) |
-| Airflow — Grid view: 4 run của `wdbc_pipeline`, cả 6 task đều SUCCESS | ![Airflow grid success](docs/screenshots/airflow-grid-success.jpg) |
-| Airflow — Graph view: `ingest → validate → split → scale → train → report` | ![Airflow graph](docs/screenshots/airflow-graph.jpg) |
-| MLflow — 6 version của `wdbc-classifier` đã đăng ký | ![MLflow registered versions](docs/screenshots/mlflow-registered-versions.jpg) |
-| MLflow — chi tiết run `wdbc-2026-08-25`: `accuracy=0.9512`, `roc_auc=0.9956`, đăng ký `wdbc-classifier v6` | ![MLflow run metrics](docs/screenshots/mlflow-run-metrics.jpg) |
-| `scripts/fetch_and_predict.py` — tải `wdbc-classifier` v6, dự đoán đúng 5/5 dòng test | ![fetch_and_predict.py output](docs/screenshots/fetch-and-predict-output.jpg) |
+| MLflow server not running | Process crashed | Restart: `docker compose restart mlflow` or `./setup.sh` |
+| Model won't load from registry | Version doesn't exist | Run DAG first to create version: `airflow dags test wdbc_pipeline 2026-08-25` |
+| Artifact upload fails | Wrong artifact store path | Use `--artifacts-destination file:///path` (not `C:\path` on Windows) |
