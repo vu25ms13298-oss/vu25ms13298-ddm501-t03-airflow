@@ -95,11 +95,15 @@ def on_failure_callback(context):
     start_date=datetime(2026, 8, 20),
     catchup=False,
     max_active_runs=1,
+    # SLA: alert if DAG run exceeds 30 minutes (600 seconds)
+    sla=timedelta(minutes=30),
     default_args={
         "retries": 3,
         "retry_delay": timedelta(seconds=10),
         "retry_exponential_backoff": True,
         "on_failure_callback": on_failure_callback,
+        # Max 5 minutes per task to catch hangs early
+        "execution_timeout": timedelta(minutes=5),
     },
     tags=["ddm501", "ml-pipeline", "wdbc"],
     owner="data-team",
@@ -129,10 +133,18 @@ def wdbc_pipeline():
         log.info("Starting ingest for date=%s", ds)
         start_time = time.time()
 
+        # Validate input file exists and is readable
         if not RAW.exists():
             raise AirflowFailException(f"source extract missing: {RAW}")
+        if RAW.stat().st_size == 0:
+            raise AirflowFailException(f"source extract is empty: {RAW}")
 
         frame = pd.read_csv(RAW)
+        # Validate that we loaded data
+        if frame.empty:
+            raise AirflowFailException(f"source extract loaded as empty DataFrame: {RAW}")
+        if len(frame.columns) == 0:
+            raise AirflowFailException(f"source extract has no columns: {RAW}")
         out = run_dir(ds) / "raw.parquet"
         frame.to_parquet(out, index=False)
 

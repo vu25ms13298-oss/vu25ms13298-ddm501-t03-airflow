@@ -1,6 +1,7 @@
 .venv/
 .venv-scripts/
 __pycache__/
+.airflow/
 airflow.db
 airflow-webserver.pid
 webserver_config.py
