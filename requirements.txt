@@ -1,19 +1,76 @@
-# For running Airflow locally (macOS, Linux, or Windows + WSL2).
-# Install WITH the constraints file, or pip will pull a dependency set that
-# does not work together:
+# Automated ML Pipeline: Local Development Requirements
 #
+# Python Version: 3.11 (pinned in Airflow constraints file)
+#
+# Installation:
+#   python3.11 -m venv .venv
+#   source .venv/bin/activate  # or .venv\Scripts\activate on Windows
 #   pip install -r requirements.txt \
 #     --constraint https://raw.githubusercontent.com/apache/airflow/constraints-2.8.4/constraints-3.11.txt
 #
-# numpy 1.24.4 and pandas 2.1.4 are not typos and not a downgrade you should
-# "fix". Airflow 2.8.4 pins them, which is exactly the constraint Lab 2 runs
-# into, one step larger.
+# IMPORTANT: Install WITH the Airflow constraints file, or pip will pull
+# incompatible dependencies. The constraints file locks versions across the
+# entire dependency tree for stability.
+#
+# Reference:
+#   https://airflow.apache.org/docs/apache-airflow/stable/installation/installing-from-pypi.html
+
+# ============================================================================
+# AIRFLOW & ORCHESTRATION
+# ============================================================================
+
+# Apache Airflow: DAG scheduler, executor, webserver
+# Version 2.8.4 is stable and widely used; includes SQLite backend
 apache-airflow==2.8.4
+
+# ============================================================================
+# DATA PROCESSING & SERIALIZATION
+# ============================================================================
+
+# pandas: DataFrame manipulation and analysis
+# Version 2.1.4 matches Airflow 2.8.4 constraints (exact dependency set)
 pandas==2.1.4
+
+# PyArrow: Efficient serialization to/from parquet format
+# Used for storing intermediate pipeline outputs (raw, clean, train, test data)
+# Version 14.0.2 is pinned by Airflow 2.8.4
 pyarrow==14.0.2
 
-# mlflow runs both the train task's client and (via the `mlflow` service in
-# docker-compose.yml) this project's own tracking server -- same image,
-# same package. Local SQLite + filesystem artifact store, so no boto3/S3.
-mlflow==2.19.0
+# ============================================================================
+# MACHINE LEARNING
+# ============================================================================
+
+# scikit-learn: ML algorithms and utilities
+# Used for: LogisticRegression, accuracy_score, roc_auc_score
+# Version 1.6.0 is stable and performant for this project
 scikit-learn==1.6.0
+
+# ============================================================================
+# EXPERIMENT TRACKING & MODEL REGISTRY
+# ============================================================================
+
+# MLflow: Experiment tracking, model registry, artifact store
+# Runs both as:
+#   1. Client library in this project's Airflow DAGs
+#   2. Server in docker-compose.yml (tracking server + registry)
+# Version 2.19.0 is current stable with good Python 3.11 support
+mlflow==2.19.0
+
+# ============================================================================
+# NOTES
+# ============================================================================
+#
+# numpy 1.24.4 & pandas 2.1.4:
+#   These versions are NOT typos and NOT downgrades. Airflow 2.8.4 pins them,
+#   which is the exact constraint that Tutorial 02-02 also uses. Do not "upgrade"
+#   them without testing the full stack.
+#
+# Boto3 (AWS S3):
+#   NOT included. This project uses MLflow's local HTTP proxy for artifacts,
+#   so no S3/AWS credentials or boto3 is needed.
+#
+# Constraints file:
+#   The Airflow constraints file is CRITICAL:
+#   https://raw.githubusercontent.com/apache/airflow/constraints-2.8.4/constraints-3.11.txt
+#   It specifies compatible versions for 100+ transitive dependencies.
+#   Without it, pip may resolve to incompatible packages (e.g., wrong numpy version).

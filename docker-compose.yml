@@ -1,88 +1,176 @@
-# Tutorial 03 — Airflow + MLflow, fully self-contained
+# Automated ML Pipeline Stack: Airflow + MLflow
 #
-#   docker compose up -d --build      # first time: builds the image, then starts it
-#   docker compose ps                 # wait for STATUS = healthy (about a minute)
+# Services:
+#   - mlflow: Experiment tracking server and model registry (Port 15030)
+#   - airflow: DAG scheduler and executor (Port 18080)
+#
+# Quick Start:
+#   docker compose up -d --build      # First time: build and start
+#   docker compose ps                 # Check status (wait for "healthy")
 #   docker compose exec airflow cat /opt/airflow/standalone_admin_password.txt
+#   Open http://127.0.0.1:18080 (Airflow) and http://127.0.0.1:15030 (MLflow)
 #
-# On Linux, first create a .env file next to this one containing:
-#     AIRFLOW_UID=1000                # the number `id -u` prints
+# On Linux, create .env first:
+#   echo "AIRFLOW_UID=$(id -u)" > .env
 #
-# Then open http://127.0.0.1:18080 (Airflow, user `admin`) and
-# http://127.0.0.1:15030 (MLflow).
+# Stop & Cleanup:
+#   docker compose down                # Stop containers
+#   docker compose down -v             # Also remove volumes (data)
 #
-# No other stack needed: the `mlflow` service below is this project's own
-# tracking server -- SQLite backend, artifacts on a local volume. Nothing
-# points at Tutorial 02-02 anymore.
+# Environment Variables (configure in .env):
+#   AIRFLOW_UID: Set on Linux to avoid permission issues (default: 50000)
+#   LOG_LEVEL: Logging level for Airflow (default: INFO)
+#   AIRFLOW_CORE_MAX_ACTIVE_RUNS: Max concurrent DAG runs (default: 1)
+#
+# Both services use the same image but different entrypoints:
+#   - mlflow: runs MLflow server (no Airflow needed)
+#   - airflow: runs Airflow scheduler + executor
 
+version: "3.8"
 name: ddm501-t03
 
 services:
+  # MLflow: Experiment Tracking & Model Registry
+  # Backend: SQLite (local database, no setup needed)
+  # Artifacts: HTTP proxy (avoids permission issues on bind mounts)
+  # Healthcheck: /health endpoint responds with 200 OK
   mlflow:
     build: .
     image: ddm501-t03-airflow:2.8.4
     container_name: ddm501-t03-mlflow
-    # The base image's entrypoint always execs "airflow $@" -- bypass it so
-    # this service runs the mlflow server instead.
+
+    # Bypass airflow entrypoint to run mlflow instead
     entrypoint: ["mlflow"]
     command:
       - server
       - --backend-store-uri
       - sqlite:////mlflow/mlflow.db
-      # A raw local path here would make the *client* (the airflow
-      # container, a different filesystem) write artifacts directly to that
-      # path and fail with PermissionError. --artifacts-destination plus the
-      # default mlflow-artifacts:/ root instead proxies every artifact
-      # read/write through this server's HTTP API, so only this container
-      # ever touches /mlflow/artifacts.
+      # IMPORTANT: Use HTTP proxy for artifacts, not raw local path
+      # Raw path causes PermissionError on Windows bind mounts because
+      # airflow container filesystem ≠ mlflow container filesystem
       - --artifacts-destination
       - /mlflow/artifacts
       - --host
       - 0.0.0.0
       - --port
       - "5000"
+
     ports:
+      # External: internal mapping (port 15030 on host → port 5000 in container)
       - "15030:5000"
+
     user: "${AIRFLOW_UID:-50000}:0"
+
     volumes:
+      # Persist MLflow database and artifacts between restarts
       - ./mlflow-data:/mlflow
+
+    # Health check: ensure server is running and responsive
     healthcheck:
       test: ["CMD", "curl", "--fail", "http://localhost:5000/health"]
       interval: 10s
       timeout: 5s
       retries: 18
       start_period: 30s
+
+    # Auto-restart on crash (e.g., OOM, segfault)
     restart: unless-stopped
 
+    # Resource limits: adjust based on available resources
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 1G
+        reservations:
+          cpus: "1"
+          memory: 512M
+
+    # Logging and environment
+    environment:
+      - PYTHONUNBUFFERED=1
+      - MLFLOW_BACKEND_STORE_URI=sqlite:////mlflow/mlflow.db
+
+  # Airflow: DAG Scheduler & Executor
+  # Mode: Standalone (single process running scheduler + executor + webserver)
+  # Executor: SequentialExecutor (one task at a time, good for dev/small workloads)
+  # Database: SQLite (fast local database, sufficient for testing)
   airflow:
     build: .
     image: ddm501-t03-airflow:2.8.4
     container_name: ddm501-t03-airflow
+
     command: standalone
+
+    # Wait for MLflow to be healthy before starting Airflow
     depends_on:
       mlflow:
         condition: service_healthy
+
     ports:
-      # 18080, not 8080: Lab 2's Airflow already owns 8080 and you will want
-      # to run both at some point.
+      # Port 18080 (not 8080) to avoid conflicts with Tutorial 02-02
+      # Access at: http://127.0.0.1:18080 (user: admin)
       - "18080:8080"
-    environment:
-      AIRFLOW__CORE__EXECUTOR: SequentialExecutor
-      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
-      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: sqlite:////opt/airflow/airflow.db
-      # Same docker-compose project, same default network -- "mlflow" is the
-      # other service's hostname on it. No host.docker.internal needed now.
-      MLFLOW_TRACKING_URI: http://mlflow:5000
+
+    # User: airflow (non-root for security, AIRFLOW_UID set on Linux)
     user: "${AIRFLOW_UID:-50000}:0"
+
+    # Volumes: bind current project directories
     volumes:
+      # DAGs: read-only (scheduler loads from here)
       - ./dags:/opt/airflow/dags
+      # Data: read-write (pipeline inputs/outputs)
       - ./data:/opt/airflow/data
+      # Logs: for debugging individual tasks
       - ./logs:/opt/airflow/logs
+      # Scripts: utility Python scripts
       - ./scripts:/opt/airflow/scripts
+
+    # Health check: ensure webserver is responsive
     healthcheck:
       test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
       interval: 15s
       timeout: 10s
       retries: 20
       start_period: 60s
+
+    # Auto-restart on crash
     restart: unless-stopped
+
+    # Resource limits: adjust based on available resources
+    deploy:
+      resources:
+        limits:
+          cpus: "4"
+          memory: 2G
+        reservations:
+          cpus: "2"
+          memory: 1G
+
+    # Environment configuration
+    environment:
+      # Core settings
+      - AIRFLOW__CORE__EXECUTOR=SequentialExecutor
+      - AIRFLOW__CORE__LOAD_EXAMPLES=false
+      - AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION=true
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=sqlite:////opt/airflow/airflow.db
+
+      # MLflow tracking: use internal DNS name (docker-compose network)
+      # "mlflow" resolves to the mlflow service on the same docker-compose network
+      - MLFLOW_TRACKING_URI=http://mlflow:5000
+
+      # Logging: adjust verbosity here (INFO, WARNING, ERROR, DEBUG)
+      - AIRFLOW__LOGGING__LOGGING_LEVEL=INFO
+
+      # Security: keep examples disabled
+      - AIRFLOW__CORE__LOAD_EXAMPLES=false
+
+      # Output: real-time logs (don't buffer)
+      - PYTHONUNBUFFERED=1
+
+      # Max concurrent DAG runs (override with env var or .env file)
+      - AIRFLOW__CORE__MAX_ACTIVE_RUNS=1
+
+    # Load additional environment variables from .env file
+    env_file:
+      - .env
